@@ -1,0 +1,114 @@
+# คู่มือการเตรียมสไลด์นำเสนอโปรเจกต์ ITCS213 (8-bit Checksum)
+
+เอกสารนี้สรุปแนวทางการใส่เนื้อหาในแต่ละหน้าตามไฟล์ Template (`Template_ITCS213_Slides__SecID_GroupID.pptx`) โดยอ้างอิงจากโค้ด **8-bit Checksum (ภาษา C และ MIPS Assembly)**
+
+---
+
+## Slide 1: หน้าปก (Title Slide)
+* **Project Title:** 8-bit Checksum Calculator (C & MIPS Implementation)
+* **Group ID:** ใส่รหัสกลุ่ม (เช่น `S1-G05`)
+* **Members:** ใส่ชื่อ-นามสกุล และรหัสนักศึกษาของสมาชิกทั้ง 5 คน
+
+---
+
+## Slide 2: Task & Program Overview
+* **What your program does:** อธิบายสั้นๆ ว่าโปรแกรมนี้รับข้อมูลเลขฐาน 2 ผ่าน Command-line Arguments (`argv`) แล้วคำนวณหาค่า **8-bit Checksum** (เพื่อใช้ตรวจสอบความถูกต้องของข้อมูลในการสื่อสาร) จากนั้นแสดงผลลัพธ์เป็นทั้งเลขฐาน 2 (Binary) และฐาน 16 (Hexadecimal)
+* **Short Demo:** แคปภาพหน้าจอตอนรันโปรแกรมภาษา C ใน Terminal (แสดงคำสั่งที่รัน เช่น `./checksum 10101001 00111001` และผลลัพธ์ที่ได้)
+
+---
+
+## Slide 3: Key Function
+* **เนื้อหาที่ต้องใส่:** เลือกส่วนที่สำคัญที่สุดของโค้ดมาอธิบาย (แนะนำให้เลือกส่วน **Binary Conversion & Wrap-around Carry / 1's Complement**)
+* **Code:** วางโค้ดภาษา C เฉพาะส่วนลูปการแปลงเลขฐาน 2 (`value = (value << 1) + (*p - '0')`) และส่วน `while (sum > 0xFF)` + `~sum`
+* **Why it is important:** อธิบายว่าส่วนนี้คือหัวใจหลักของอัลกอริทึม Checksum ที่เปลี่ยนข้อความให้เป็นบิตข้อมูล และจัดการบิตที่ล้นเกิน 8 บิต (Carry) ให้ทบกลับมาบวกก่อนทำ 1's Complement
+
+---
+
+## Slide 4: Assembly Translation (MIPS)
+* **Assembly Listing:** นำโค้ด MIPS เฉพาะส่วนหลัก (`outer_loop`, `inner_loop`, `wrap_around`, `complement`) มาวาง (สามารถตัดส่วน `syscall` พิมพ์ข้อความออกได้ถ้ายาวเกินไป แล้วไปใส่ตัวเต็มใน Appendix)
+* **Register Mapping:** ทำตารางเทียบตัวแปรภาษา C กับ Register ของ MIPS:
+  * `argc` $\rightarrow$ `$s0`
+  * `argv` $\rightarrow$ `$s1`
+  * `sum` $\rightarrow$ `$s2`
+  * `checksum` $\rightarrow$ `$s3`
+  * `i` (ตัวนับลูป) $\rightarrow$ `$t0`
+  * `p` (Pointer ชี้ตัวอักษร) $\rightarrow$ `$t1`
+  * `value` (ค่าที่แปลงได้แต่ละชุด) $\rightarrow$ `$t2`
+
+---
+
+## Slide 5: Instruction Encoding (R / I / J Formats)
+เลือกคำสั่งจากโค้ด MIPS ของเรามาอย่างละ 1 ตัวอย่าง เพื่อแตกเป็นรหัสเครื่อง (32-bit Machine Code):
+1. **R-Format:** เช่น `add $s2, $s2, $t2`
+   * แยกช่อง: `opcode (0)` | `rs ($s2=18)` | `rt ($t2=10)` | `rd ($s2=18)` | `shamt (0)` | `funct (32)`
+2. **I-Format:** เช่น `addi $t3, $t3, -48` หรือ `lb $t3, 0($t1)`
+   * แยกช่อง: `opcode` | `rs` | `rt` | `immediate (16-bit 2's complement)`
+3. **J-Format:** เช่น `j inner_loop`
+   * แยกช่อง: `opcode (2)` | `target address (26-bit)`
+
+---
+
+## Slide 6: Datapath Walk-through (Single-Cycle)
+* นำรูป **MIPS Single-Cycle Datapath** มาวาง แล้วลากเส้นไฮไลต์การทำงานของคำสั่งสำคัญ 1–2 คำสั่งจากโค้ดเรา เช่น `add $s2, $s2, $t2` (R-type) หรือ `lb $t3, 0($t1)` (Load)
+* ระบุค่า **Control Signals** ที่เกิดขึ้น (เช่น `RegDst`, `ALUSrc`, `MemtoReg`, `RegWrite`, `MemRead`, `ALUOp`)
+
+---
+
+## Slide 7: Pipeline (IF – ID – EX – MEM – WB)
+* ยกตัวอย่างชุดคำสั่งใน `inner_loop` ที่ทำงานต่อเนื่องกัน 3–4 บรรทัด:
+  ```mips
+  lb   $t3, 0($t1)
+  beqz $t3, end_inner
+  addi $t3, $t3, -48
+  ```
+* **Hazards Analysis:**
+  * **Load-Use Data Hazard:** คำสั่ง `lb` อ่านค่า `$t3` ในขั้น `MEM` แต่คำสั่ง `beqz` หรือ `addi` ต้องการใช้ `$t3` ทันทีในขั้น `ID`/`EX` (ต้องใช้ Stall 1 cycle + Forwarding)
+  * **Control Hazard:** คำสั่ง `beqz` และ `j inner_loop` ทำให้เกิดการกระโดด (Branch) ซึ่งอาจทำให้คำสั่งที่ดึงมารอในขั้น `IF` ต้องถูก Flush หากเงื่อนไขเป็นจริง
+
+---
+
+## Slide 8: Memory & Data Representation
+* **Memory Layout:** อธิบายว่าข้อมูลถูกเก็บอย่างไร:
+  * `.data` เก็บ String คงที่ เช่น `"Checksum (Bin): "` (เรียงทีละ 1 byte ตามรหัส ASCII และปิดท้ายด้วย `0x00` หรือ `\0`)
+  * `argv` เป็น Array ของ Pointer (ขนาดช่องละ 4 bytes / 32-bit) ที่ชี้ไปยัง Address ของข้อความ Argument แต่ละตัวในหน่วยความจำ
+* **Data Representation:**
+  * การแปลง ASCII `'0'` (`0x30` = 48) และ `'1'` (`0x31` = 49) ให้เป็นตัวเลข `0` และ `1` ด้วยการลบ `48`
+  * การใช้ Bitwise `AND` (`0xFF`) เพื่อตัดให้เป็น **Unsigned 8-bit integer** (ช่วงค่า `0` ถึง `255`) และการใช้ 1's Complement (`not`)
+
+---
+
+## Slide 9: CPU vs GPU / NPU (Parallel Execution)
+* **CPU (Sequential):** โค้ดของเราทำงานแบบเรียงลำดับ (ทีละตัวอักษร ทีละชุดข้อมูล) เหมาะกับข้อมูลขนาดเล็กและมีเงื่อนไข Branch เยอะ (`beqz`, `ble`)
+* **GPU / NPU (Parallel):** หากต้องคำนวณ Checksum ของไฟล์ขนาดใหญ่ระดับ Gigabyte (เช่น ข้อมูลแพ็กเก็ตเครือข่ายจำนวนมหาศาล) GPU สามารถแบ่งข้อมูลเป็นก้อนย่อยๆ ให้หลายพัน Cores บวกพร้อมกันได้โดยใช้เทคนิค **Parallel Reduction Tree** ทำให้เร็วกว่า CPU หลายเท่า
+
+---
+
+## Slide 10: Performance & Optimisation
+อธิบายเทคนิคที่เราใช้ปรับปรุงโค้ด C ให้แปลงเป็น MIPS ได้สั้นและเร็วขึ้น:
+1. **ตัดอาเรย์ `data[]` ทิ้ง:** บวกค่าเข้า `sum` ทันทีที่แปลงเสร็จ ช่วยลดการจองพื้นที่บน Stack และลดคำสั่ง `sw` / `lw` (Memory Access)
+2. **ใช้ Pointer (`*p`) แทน Array 2 มิติ (`argv[i][j]`):** ลดการคำนวณ Address ใหม่ทุกรอบลูป เปลี่ยนเป็นแค่ `addi $t1, $t1, 1`
+3. **ใช้ Bitwise Shift (`<< 1`) แทนการคูณ (`* 2`):** ใช้คำสั่ง `sll` ใน 1 รอบสัญญาณนาฬิกา แทนการใช้คำสั่ง `mul` ที่ซับซ้อนและช้ากว่า
+
+---
+
+## Slide 11: Conclusion & Member Contributions
+* **Challenges & What we learned:** ปัญหาที่เจอตอนเขียน (เช่น การจัดการ Pointer 2 ชั้นของ `argv`, การแสดงผลเลขฐาน 16 ใน MIPS ที่ไม่มี `printf("%X")` ต้องทำ Lookup Table เอง) และสิ่งที่ได้เรียนรู้เกี่ยวกับการทำงานระดับฮาร์ดแวร์
+* **Member Contributions:** ระบุหน้าที่รับผิดชอบของสมาชิกแต่ละคน (เช่น คนเขียน C, คนแปลง MIPS, คนวิเคราะห์ Instruction & Pipeline, คนทำสไลด์)
+
+---
+
+## Slide 12: References
+* หนังสือเรียน: *Computer Organization and Design: The Hardware/Software Interface* (Patterson & Hennessy)
+* เครื่องมือที่ใช้: MARS MIPS Simulator, GCC Compiler, VS Code
+
+---
+
+## Slide 13: Thank You! Questions?
+* ใส่รูปถ่ายสมาชิกทั้ง 5 คน พร้อมชื่อ-นามสกุล รหัสนักศึกษา และอีเมล `@student.mahidol.edu`
+
+---
+
+## Slide 14: Appendix: Source Code (as text)
+* วาง **Source Code ภาษา C** ฉบับเต็ม (แบบ Text ห้ามแคปรูป)
+* วาง **Source Code ภาษา MIPS** ฉบับเต็ม (แบบ Text ห้ามแคปรูป)
+* ระบุซอฟต์แวร์และเวอร์ชันที่ใช้รันทดสอบ (เช่น *Compiled with GCC 13.2.0 / Simulated on MARS v4.5*)
